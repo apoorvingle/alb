@@ -31,6 +31,7 @@ import Fidget.RenameIds
 import Fidget.SpecialTypes
 import Fidget.AddExports
 import Fidget.TailCalls
+import Normalizer.EtaExpansion (expand)
 import Normalizer.EtaInit
 import Normalizer.Inliner
 import Normalizer.PatternMatchCompiler
