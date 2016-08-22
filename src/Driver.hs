@@ -34,6 +34,7 @@ import Fidget.TailCalls
 import Normalizer.EtaExpansion (expand)
 import Normalizer.EtaInit
 import Normalizer.Inliner
+import Normalizer.LambdaLifting
 import Normalizer.PatternMatchCompiler
 import Parser
 import Printer.Common hiding (defaultOptions, showKinds, (</>))
@@ -57,10 +58,12 @@ data Stage = Desugared
            | TypesInferred
            | Specialized
            | Normalized
+           | LC'd
            | Annotated
            | Thunkified
            | Fidgetted
            | Compiled
+           | Evaluated
 
 data Input = Quiet { filename :: String}
            | Loud  { filename :: String }
@@ -140,8 +143,11 @@ options =
     , Option [] ["Ss"] (NoArg (\opt -> opt { stage = Specialized }))
         "Stop after specialization"
 
-    , Option [] ["Sn"] (NoArg (\opt -> opt { stage = Normalized }))
+    , Option [] ["Sn"] (NoArg (\opt -> opt{ stage = Normalized }))
         "Stop after MPEG normalization"
+
+    , Option [] ["Sl"] (NoArg (\opt -> opt { stage = LC'd }))
+        "Stop after lambda_case normalization"
 
     , Option [] ["Sa"] (NoArg (\opt -> opt { stage = Annotated }))
         "Stop after lambda_case annotation"
@@ -323,13 +329,14 @@ buildPipeline options =
       KindsInferred    -> filePipe $ \s q -> toInferKinds
       TypesInferred    -> filePipe $ \s q -> toInferTypes s >=> pure fst
       Specialized      -> codePipe toSpecialized
-      Normalized       -> codePipe toNormalized
+      LC'd             -> codePipe toLC
       Annotated        -> codePipe toAnnotated
       Thunkified       -> codePipe toThunkified
       Fidgetted        -> toFidgetted >=> pure (text . show . pprogram) >=> writeIntermediate
       Compiled         -> case output options of
                             Nothing -> pure (const (hPutStrLn stderr "Cannot compile program without output name"))
                             Just s  -> toFidgetted >=> pure (compile (compCertOptions options) s)
+      Normalized       -> codePipe (toNormalized)
 
     where --filePipe' :: (s -> q -> Pass _ x y) -> (Pass () [(s, (q, x))] [y])
           filePipe' = initial initialState . mapM . (\f -> \(s, (q, p)) -> f s q p)
@@ -359,10 +366,13 @@ buildPipeline options =
             = filePipe' (\s q -> toInferTypes s) >=> pure concat' >=> specializeProgram exported
 
           toNormalized
+            = toSpecialized >=> expandCtors >=> liftDefinitions
+
+          toLC
             = toSpecialized >=> patternMatch >=> pure (inlineProgram exported) >=> pure etaInit
 
           toAnnotated
-            = toNormalized >=> propagateLCTypes >=> checkLCProgram
+            = toLC >=> propagateLCTypes >=> checkLCProgram
 
           toThunkified
             = toAnnotated >=> thunkifyLC (initialize options) >=> pure etaInit >=>
