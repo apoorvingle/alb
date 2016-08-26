@@ -31,6 +31,7 @@ import Fidget.RenameIds
 import Fidget.SpecialTypes
 import Fidget.AddExports
 import Fidget.TailCalls
+import Mon6a as Mon6a
 import Normalizer.EtaExpansion (expand)
 import Normalizer.EtaInit
 import Normalizer.Inliner
@@ -40,6 +41,7 @@ import Parser
 import Printer.Common hiding (defaultOptions, showKinds, (</>))
 import Printer.IMPEG
 import Printer.LambdaCase
+import Printer.Mon6
 import Solver.Trace as Solver
 import qualified Syntax.Surface as S
 import Syntax.XMPEG
@@ -63,6 +65,7 @@ data Stage = Desugared
            | Thunkified
            | Fidgetted
            | Compiled
+           | Mon6d
            | Evaluated
 
 data Input = Quiet { filename :: String}
@@ -157,6 +160,12 @@ options =
 
     , Option ['f'] ["Sf"] (NoArg (\opt -> opt { stage = Fidgetted }))
         "Stop after generating Fidget"
+
+    , Option ['6'] ["S6"] (NoArg (\opt -> opt{ stage = Mon6d }))
+        "Stop after generating Mon6"
+
+    , Option ['g'] [] (NoArg (\opt -> opt{ stage = Evaluated }))
+        "Interpret generated Mon6"
 
     , Option ['O'] [] (ReqArg (\p opt -> opt { optimize = Full (read p) }) "PASSES")
         "Perform PASSES passes of full optimization in Fidget"
@@ -335,8 +344,10 @@ buildPipeline options =
       Fidgetted        -> toFidgetted >=> pure (text . show . pprogram) >=> writeIntermediate
       Compiled         -> case output options of
                             Nothing -> pure (const (hPutStrLn stderr "Cannot compile program without output name"))
-                            Just s  -> toFidgetted >=> pure (compile (compCertOptions options) s)
+                            Just s  -> toFidgetted >=> pure (CompCert.compile (compCertOptions options) s)
       Normalized       -> codePipe (toNormalized)
+      Mon6d            -> codePipe (toNormalized >=> Mon6a.compile)
+      Evaluated        -> toNormalized >=> Mon6a.compile >=> pure (Mon6a.runProgram >=> (putStrLn . show . ppr))
 
     where --filePipe' :: (s -> q -> Pass _ x y) -> (Pass () [(s, (q, x))] [y])
           filePipe' = initial initialState . mapM . (\f -> \(s, (q, p)) -> f s q p)
@@ -366,7 +377,7 @@ buildPipeline options =
             = filePipe' (\s q -> toInferTypes s) >=> pure concat' >=> specializeProgram exported
 
           toNormalized
-            = toSpecialized >=> expandCtors >=> liftDefinitions
+            = toSpecialized >=> expand >=> liftDefinitions
 
           toLC
             = toSpecialized >=> patternMatch >=> pure (inlineProgram exported) >=> pure etaInit
