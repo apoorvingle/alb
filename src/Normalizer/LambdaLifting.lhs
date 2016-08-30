@@ -47,7 +47,7 @@ the types of local bindings as we go.
 
 > type TyEnv = Map Id Type
 > type CtorEnv = [((Id, [Type]), [Type])]
-> data Envs = Envs{ locals :: TyEnv, globals :: TyEnv, ctors :: CtorEnv }
+> data Envs = Envs{ locals :: TyEnv, globals :: TyEnv, ctors :: CtorEnv, binds :: [(Id, Id)] }
 > newtype M a = M{ runM :: WriterT [Defn] (ReaderT Envs Base) a }
 >     deriving (Functor, Applicative, Monad, MonadBase, MonadWriter [Defn], MonadReader Envs)
 
@@ -64,7 +64,12 @@ the types of local bindings as we go.
 >           sccNodes = [(d, name, freeVariables body) | d@(Defn name _ (Right (Gen _ _ body))) <- defns]
 >           dss = stronglyConnCompR sccNodes
 
->           liftDefnGroup (AcyclicSCC (d, _, _)) = return [d]
+>           liftDefnGroup (AcyclicSCC (Defn name tys rhs, _, _)) =
+>               case rhs of
+>                 Left _ -> return [Defn name tys rhs]
+>                 Right (Gen [] [] body) ->
+>                     do body' <- liftDefnsFrom body
+>                        return [Defn name tys (Right (Gen [] [] body'))]
 >           liftDefnGroup (CyclicSCC [(Defn name (Forall [] [] t) (Right (Gen [] [] body)), _, fvs)]) =
 >               do env <- asks locals
 >                  let local = Map.keys env
@@ -99,17 +104,30 @@ the types of local bindings as we go.
 >           addBindings ds (ELam x t b) = ELam x t (addBindings ds b)
 >           addBindings ds e = ELet ds e
 
+In the following, I'm assuming that we have no remaining nests of the sort (let x = y; y = x in E)
+
+> inlineVariableBindings :: [Defn] -> ([Defn] -> M t) -> M t
+> inlineVariableBindings ds f = local (\envs -> envs{ binds = s ++ binds envs }) (f ds')
+>     where split (Defn x _ (Right (Gen _ _ (ELamVar y)))) (s, ds)
+>               | x /= y    = ((x, y) : s, ds)
+>           split d (s, ds) = (s, d : ds)
+>           (s, ds') = foldr split ([], []) ds
+
 With the work out of the way, we can implement a straight-forward pass over the syntax tree.
 
 > class HasDefinitions t
 >     where liftDefnsFrom :: t -> M t
 
 > instance HasDefinitions Expr
->     where liftDefnsFrom (ELam x t e) = bind (Map.insert x t) (liftM (ELam x t) (liftDefnsFrom e))
+>     where liftDefnsFrom (ELamVar x) = asks (ELamVar . flip replacement x . binds)
+>           liftDefnsFrom (ELam x t e) = bind (Map.insert x t) (liftM (ELam x t) (liftDefnsFrom e))
 >           liftDefnsFrom (ELet (Decls ds) e) =
 >               do ds' <- liftDefns ds
->                  bind (Map.union (Map.fromList [(name, ty) | Defn name (Forall [] [] ty)  _ <- ds']))
->                       (liftM (ELet (Decls ds')) (liftDefnsFrom e))
+>                  inlineVariableBindings ds' $ \ds'' ->
+>                      if null ds''
+>                      then liftDefnsFrom e
+>                      else bind (Map.union (Map.fromList [(name, ty) | Defn name (Forall [] [] ty)  _ <- ds'']))
+>                                (liftM (ELet (Decls ds'')) (liftDefnsFrom e))
 >           liftDefnsFrom (EMatch m) = liftM EMatch (liftDefnsFrom m)
 >           liftDefnsFrom (EApp e e') = liftM2 EApp (liftDefnsFrom e) (liftDefnsFrom e')
 >           liftDefnsFrom (EBind ta tb tm me x e e') = liftM2 (EBind ta tb tm me x) (liftDefnsFrom e) (liftDefnsFrom e')
@@ -124,23 +142,30 @@ Cases that shouldn't be present any more: ELetVar, EMethod, ELetTypes, ESubst
 >           liftDefnsFrom (MCommit e) = liftM MCommit (liftDefnsFrom e)
 >           liftDefnsFrom (MElse m m') = liftM2 MElse (liftDefnsFrom m) (liftDefnsFrom m')
 >           liftDefnsFrom (MGuarded g m) = do g' <- liftDefnsFrom g
->                                             bs <- boundBy g'
->                                             bind (Map.union bs) (liftM (MGuarded g') (liftDefnsFrom m))
+>                                             guarded g' m
 
-Perhaps we should store the types of pattern-bound variables in the patterns?
 
-> boundBy :: Guard -> M TyEnv
-> boundBy (GFrom PWild _) = return Map.empty
-> boundBy (GFrom (PVar x t) _) =
->        return (Map.singleton x t)
-> boundBy (GFrom (PCon id ts [] xs) _) =
->     do ts <- asks (fromMaybe (error ("Unknown constructor: " ++ show (ppr (Inst id ts [])))) . lookup (id, ts) . ctors)
->        return (Map.fromList (zip xs ts))
-> boundBy (GLet (Decls ds)) = return (Map.fromList [(name, ty) | Defn name (Forall [] [] ty) _ <- ds])
+Perhaps we should store the types of pattern-bound variables in constructor patterns?
+
+> guarded (GFrom p x) m =
+>     do bs <- boundBy p
+>        x' <- asks (flip replacement x . binds)
+>        bind (Map.union bs) (liftM (MGuarded (GFrom p x')) (liftDefnsFrom m))
+>     where boundBy PWild = return Map.empty
+>           boundBy (PVar x t) =
+>                  return (Map.singleton x t)
+>           boundBy (PCon id ts [] xs) =
+>               do ts <- asks (fromMaybe (error ("Unknown constructor: " ++ show (ppr (Inst id ts [])))) . lookup (id, ts) . ctors)
+>                  return (Map.fromList (zip xs ts))
+> guarded (GLet (Decls ds)) m =
+>     do ds' <- liftDefns ds
+>        inlineVariableBindings ds' $ \ds'' ->
+>            if null ds''
+>            then liftDefnsFrom m
+>            else bind (Map.union (Map.fromList [(name, ty) | Defn name (Forall [] [] ty)  _ <- ds'']))
+>                      (liftM (MGuarded (GLet (Decls ds''))) (liftDefnsFrom m))
 
 Cases that shouldn't be present: GSubst, GLetTypes
-
-> boundBy _ = return Map.empty
 
 > instance HasDefinitions Guard
 >     where liftDefnsFrom (GLet (Decls defns)) = liftM (GLet . Decls) (liftDefns defns)
@@ -148,7 +173,7 @@ Cases that shouldn't be present: GSubst, GLetTypes
 
 > liftDefinitions :: Pass s Specialized Specialized
 > liftDefinitions (Specialized tds entries (Decls defns)) =
->     liftBase $ do ((entries', defns'), defns'') <- runReaderT (runWriterT (runM go)) (Envs Map.empty globals cenv)
+>     liftBase $ do ((entries', defns'), defns'') <- runReaderT (runWriterT (runM go)) (Envs Map.empty globals cenv [])
 >                   return (Specialized tds entries' (Decls (defns' ++ defns'')))
 >     where globals = Map.fromList [(name, t) | Defn name (Forall [] [] t) _ <- defns]
 >           cenv = concatMap ctorsFrom tds

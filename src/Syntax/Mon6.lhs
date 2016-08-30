@@ -60,9 +60,6 @@ TODO: should the 'Var's in BlockCall, DataAlloc, and ClosAlloc be Atoms?
 >           | Enter Var Var                     -- enter a closure
 >           | PrimCall Name [Var]               -- invoke a primitive
 
-> replacement s x = fromMaybe x (lookup x s)
-> replacements s = map (replacement s)
-
 > instance HasVariables Tail
 >     where freeVariables (Return (Var v))   = [v]
 >           freeVariables (Return (Const b)) = []
