@@ -1,11 +1,11 @@
 requires miniprelude
 requires test
 
-instance Monad Maybe 
+instance Monad Maybe
    where return = Just
          (Just i) >>= f = f i
          Nothing >>= f = Nothing
-   
+
 data Ty = TyNat | TyFun Ty Ty
 
 instance Eq Ty where
