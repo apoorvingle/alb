@@ -148,8 +148,8 @@ data Flag = Holds | Fails
           deriving (Eq, Show, Typeable, Data)
 
 data Ctor tyid p t = Ctor { ctorName       :: Located Id
-                          , ctorParams     :: [tyid]
-                          , ctorQualifiers :: [Located p]
+                          , ctorParams     :: [tyid] -- this guy is never populated. assume it is existential
+                          , ctorQualifiers :: [Located p] 
                           , ctorFields     :: [Located t] }
             deriving (Eq, Show, Typeable, Data)
 

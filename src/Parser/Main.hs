@@ -489,11 +489,11 @@ dataDecl = do opaque <- option False (reserved "opaque" >> return True)
                                    name <- located consym
                                    rhs <- located atype
                                    preds <- option [] $ reserved "if" >> commaSep1 (located predicate)
-                                   return (Ctor name [] preds [lhs, rhs])
+                                   return (Ctor name [] preds [lhs, rhs]) -- [ANI] FIXME: 2nd args should returns the ctorParams
                         , do name <- located conid
                              fields <- many (located atype)
                              preds <- option [] $ reserved "if" >> commaSep1 (located predicate)
-                             return (Ctor name [] preds fields) ]
+                             return (Ctor name [] preds fields) ] -- [ANI] FIXME: 2nd args should returns the ctorParams
 
 deriveList :: ParseM [Id]
 deriveList  = option []

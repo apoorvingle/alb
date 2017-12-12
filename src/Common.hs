@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses, OverlappingInstances, TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TemplateHaskell #-}
 module Common where
 
 import Prelude hiding ((<$>))
@@ -211,15 +211,15 @@ initial s p x = PassM (StateT (\s' -> do (r, _) <- runStateT (unPass (p x)) s
 class Has s s'
     where up :: Pass s' t u -> Pass s t u
 
-instance Has s s
+instance  {-# OVERLAPPING #-} Has s s
     where up = id
 
-instance Has (t, s) s
+instance {-# OVERLAPPING #-} Has (t, s) s
     where up f x = PassM (StateT body)
               where body (t, s) = do (y, s') <- runStateT (unPass (f x)) s
                                      return (y, (t, s'))
 
-instance Has t s => Has (t, s') s
+instance {-# OVERLAPPING #-} Has t s => Has (t, s') s
     where up f x = PassM (StateT body)
               where body (t, s) = do (y, t') <- runStateT (unPass (up f x)) t
                                      return (y, (t', s))

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances, OverlappingInstances, TupleSections, PatternGuards, Rank2Types #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances, TupleSections, PatternGuards, Rank2Types #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 module Fidget.SpecialTypes (specialTypes) where
 

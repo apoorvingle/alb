@@ -1,8 +1,13 @@
 .*
-alb
 *.hi
 *.o
 *.bat
 obj/*
+
+# executables
+alb
+ilab
+albc
+alb-hpc
 *.exe
 *.out

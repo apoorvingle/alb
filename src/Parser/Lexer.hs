@@ -29,16 +29,17 @@ languageDef  = T.LanguageDef {
                , T.commentLine    = "--"
                , T.nestedComments = True
                , T.identStart     = letter
-               , T.identLetter	 = alphaNum <|> oneOf "_'"
-               , T.opStart	 = T.opLetter languageDef
-               , T.opLetter	 = oneOf ":!#$%&*+./<=>?@\\^|-~"
-               , T.reservedNames = [ "area","bitdata","case", "class"
-                                   , "data", "deriving", "do", "else"
-                                   , "extends", "fails", "if", "in"
-                                   , "infix", "infixl", "infixr"
-                                   , "instance", "let", "of", "struct"
-                                   , "then", "type", "where"
-                                   , "opaque", "primitive", "requires", "volatile", "require" ]
+               , T.identLetter    = alphaNum <|> oneOf "_'"
+               , T.opStart        = T.opLetter languageDef
+               , T.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+               , T.reservedNames  = [ "area","bitdata","case", "class"
+                                    , "data", "deriving", "do", "else"
+                                    , "extends", "fails", "forall", "if", "in"
+                                    -- [ANI] FIXME: forall will be a reserved word
+                                    , "infix", "infixl", "infixr"
+                                    , "instance", "let", "of", "struct"
+                                    , "then", "type", "where"
+                                    , "opaque", "primitive", "requires", "volatile", "require" ]
                , T.reservedOpNames = [".","..","::","=","\\","|", "->"
                                      , "<-", "=>", "~", "`"] }
 
