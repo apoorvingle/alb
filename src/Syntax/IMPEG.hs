@@ -1,10 +1,18 @@
-{-# LANGUAGE CPP, FlexibleContexts, FlexibleInstances, TypeSynonymInstances, UndecidableInstances, DeriveDataTypeable, StandaloneDeriving, TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE CPP                  #-}
+{-# LANGUAGE DeriveDataTypeable   #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Syntax.IMPEG (module Syntax.Common, module Syntax.IMPEG) where
 
-import Language.Haskell.TH hiding (Match, Type, Guard, Kind)
-import Data.Generics hiding (Fixity)
-import Data.List
-import Syntax.Common
+import           Data.Generics       hiding (Fixity)
+import           Data.List
+import           Language.Haskell.TH hiding (Guard, Kind, Match, Type)
+import           Syntax.Common
 
 --------------------------------------------------------------------------------
 -- Kinds and types
@@ -360,7 +368,7 @@ $(let types = [''Scheme, ''Decls, ''Primitive, ''Signature, ''TypingGroup, ''Pat
       mkInstance x = do
                TyConI dec <- reify x
                case dec of
-                 DataD [] name typarams cons _ ->
+                 DataD [] name typarams _ cons _  ->
                    [d|instance (Typeable1 p, Data (p (Located (Type tyid))), Data tyid) => Data ($(conT name) p tyid) where gfoldl k z x = $(caseE (varE 'x) (map (mkClause 'k 'z) cons)) |]
   in (return . concat) =<< mapM mkInstance types)
 
