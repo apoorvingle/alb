@@ -31,7 +31,9 @@ instance Ord Id
 
 instance Data Id where
   gfoldl k z id = z id
-
+  gunfold k z id = undefined
+  toConstr = undefined
+  dataTypeOf = undefined
 
 instance IsString Id
     where fromString = toId

@@ -4,6 +4,7 @@ module Common where
 import Prelude hiding ((<$>))
 
 import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer (WriterT(..), Writer(..), tell, censor, runWriterT, runWriter, Monoid(..))
@@ -124,11 +125,11 @@ instance (MonadBase m, Monoid w) => MonadBase (WriterT w m)
 
 ----------------------------------------------------------------------------------------------------
 
-newtype Base t = Base (StateT Int (ErrorT CompilerError (Writer (SnocList CompilerWarning))) t)
+newtype Base t = Base (StateT Int (ExceptT CompilerError (Writer (SnocList CompilerWarning))) t)
     deriving (Functor, Applicative, Monad)
 
 runBase :: Base t -> Int -> Either (CompilerError, Warnings) (t, Warnings, Int)
-runBase (Base c) z = let (e, ws) = runWriter (runErrorT (runStateT c z))
+runBase (Base c) z = let (e, ws) = runWriter (runExceptT (runStateT c z))
                          ws'     = toList ws
                      in case e of
                           Left ce       -> Left (ce, ws')

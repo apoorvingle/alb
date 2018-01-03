@@ -281,6 +281,8 @@ pexp (Eixcase a i v b c) = sexp IXCASEE [patom a, pmachint i, pvar v, pexp b, pe
 pexp (Eerror t)          = sexp ERRORE [pty t]
 pexp (Eletlabel functs e)= sexp LETLABELE [pbinds functs, pexp e]
 pexp (Egoto l args t)    = sexp GOTOE [pvar l, patomlist args, pty t]
+pexp (Enzcase _ _ _ _ )  = undefined
+pexp (Erefcase _ _ _ _ _)  = undefined
 
 ptcons :: [(Id, [[Ftyp]])] -> Doc
 ptcons tcs = vslist (map pconstr tcs)
@@ -323,8 +325,8 @@ pglobal :: (Id, Global) -> Doc
 pglobal (g, Global t e) = slist $ [pvar g, pty t, pexp e]
 
 pexternalfunc :: ExternalFunction -> Doc
-pexternalfunc (EFexternal id cmsig) = slist $ [tok EXTERNAL, pid (fromString id), pcmsig cmsig]
-pexternalfunc (EFbuiltin id cmsig) = slist $ [tok BUILTIN, pid (fromString id), pcmsig cmsig]
+pexternalfunc (EFexternal iden cmsig) = slist $ [tok EXTERNAL, pid (fromString iden), pcmsig cmsig]
+pexternalfunc (EFbuiltin iden cmsig) = slist $ [tok BUILTIN, pid (fromString iden), pcmsig cmsig]
 pexternalfunc (EFvload memchunk) = slist $ [tok VLOAD, pmemchunk memchunk]
 pexternalfunc (EFvstore memchunk) = slist $ [tok VSTORE, pmemchunk memchunk]
 pexternalfunc (EFmemcpy size alignment) = slist $ [tok MEMCPY, int size, int alignment]

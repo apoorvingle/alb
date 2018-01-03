@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveFunctor, FlexibleInstances, FunctionalDependencies, GeneralizedNewtypeDeriving, TupleSections #-}
 module Solver.Subst where
 
-import Control.Monad.Error
 import Control.Monad.State
 import qualified Data.IntSet as Set
 import Data.List

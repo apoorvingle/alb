@@ -4,7 +4,7 @@ module CompCert (CompCertOptions(..), compile, defaultCompCertOptions) where
 import Data.List
 import Fidget.AST
 import Fidget.Pretty (pprogram)
-import System.Cmd
+import System.Process
 import System.Exit
 import System.FilePath
 import System.IO
