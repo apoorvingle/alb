@@ -326,8 +326,8 @@ instance Unifies t => Unifies [t]
               do s <- matchGeneral infinitary gvars t u
                  s' <- matchGeneral infinitary gvars ts us
                  if consistent s s'
-                 then return (s `compose` s')
-                 else failWith "MatchGeneral inconsistent"
+                   then return (s `compose` s')
+                   else failWith "MatchGeneral inconsistent"
           matchGeneral _ _ _ [] = failWith "Subst:70"
           matchGeneral _ _ [] _ = failWith "Subst:71"
 

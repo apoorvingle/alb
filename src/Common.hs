@@ -3,7 +3,6 @@ module Common where
 
 import Prelude hiding ((<$>))
 
-import Control.Monad.Error
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
@@ -22,10 +21,6 @@ mapSndM f pairs = zip (map fst pairs) `fmap` mapM f (map snd pairs)
 ----------------------------------------------------------------------------------------------------
 
 data CompilerError = Error (Maybe Location) Doc
-
-instance Error CompilerError
-    where noMsg    = Error Nothing (empty)
-          strMsg s = Error Nothing (text s)
 
 instance Printable SourcePos
     where ppr p = text (sourceName p) <> colon <> int (sourceLine p)  <> colon <> int (sourceColumn p)
