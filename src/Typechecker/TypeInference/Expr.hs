@@ -205,18 +205,19 @@ checkExpr (At loc (EApp f a)) expected = -- [ANI] TODO: Have more logic for -&> 
        tyenv <- gets typeEnvironment
        let identifiers = Map.keys tyenv
        -- [ANI] TODO get rid of this by embedding the logic in side polyTo?
+       -- A fresh variable was introduced here by polyTo, should we get rid of it?
        (funp, fty) <- t `polyTo` expected
        rF <- checkExpr f fty
        rA <- checkExpr a t
-       (assumedC, goalsC, used') <- contract loc (used rF) (used rA)
-       -- trace ("DEBUG rF: \n\tused: " ++ show (used rF)
-       --         ++ "\n\tassumed: " ++ show (assumed rF)
-       --         ++ "\n\tgoals: " ++ show (goals rF)) (return ())
-       -- trace ("DEBUG rA: \n\tused: " ++ show (used rA)
-       --         ++ "\n\tassumed: " ++ show (assumed rA)
-       --         ++ "\n\tgoals: " ++ show (goals rA)) (return ())
-       -- trace ("DEBUG tyEnv: " ++ show (intersect (used rF ++ used rA) identifiers))(return ())
-       if (not $ Set.disjoint (Set.fromList $ used rF) (Set.fromList $ used rA))
+       -- (assumedC, goalsC, used') <- contract loc (used rF) (used rA)
+       trace ("DEBUG rF: \n\tused: " ++ show (used rF)
+               ++ "\n\tassumed: " ++ show (assumed rF)
+               ++ "\n\tgoals: " ++ show (goals rF)) (return ())
+       trace ("DEBUG rA: \n\tused: " ++ show (used rA)
+               ++ "\n\tassumed: " ++ show (assumed rA)
+               ++ "\n\tgoals: " ++ show (goals rA)) (return ())
+       trace ("DEBUG tyEnv: " ++ show (intersect (used rF ++ used rA) identifiers))(return ())
+       if (Set.isSubsetOf (Set.fromList $ used rA) (Set.fromList $ used rF)) -- Share exactly same resources then it is an ShFun
        then do (funpAmp, ftyAmp)  <-  t `ampTo` expected
                rFAmp <- checkExpr f ftyAmp
                rAAmp <- checkExpr a t
@@ -225,14 +226,18 @@ checkExpr (At loc (EApp f a)) expected = -- [ANI] TODO: Have more logic for -&> 
                        , assumed = assumedC ++ assumed rFAmp ++ assumed rAAmp
                        , goals = funpAmp : goalsC ++ goals rFAmp ++ goals rAAmp
                        , used = used' }
-       else  do (funpStr, ftyStr)  <-  t `starTo` expected
-                rFStr <- checkExpr f ftyStr
-                rAStr <- checkExpr a t
-                (assumedC, goalsC, used') <- contract loc (used rFStr) (used rAStr)
-                return R{ payload = X.EApp (payload rFStr) (payload rAStr)
-                        , assumed = assumedC ++ assumed rFStr ++ assumed rAStr
-                        , goals = funpStr : goalsC ++ goals rFStr ++ goals rAStr
-                        , used = used' }
+       else if (Set.disjoint (Set.fromList $ used rF) (Set.fromList $ used rA))
+            then do (funpStr, ftyStr)  <-  t `starTo` expected -- Share no resources then it is an SeFun
+                    rFStr <- checkExpr f ftyStr
+                    rAStr <- checkExpr a t
+                    (assumedC, goalsC, used') <- contract loc (used rFStr) (used rAStr)
+                    return R{ payload = X.EApp (payload rFStr) (payload rAStr)
+                            , assumed = assumedC ++ assumed rFStr ++ assumed rAStr
+                            , goals = funpStr : goalsC ++ goals rFStr ++ goals rAStr
+                            , used = used' }
+                  -- what about \f -> \g -> \x -> (f x) (g x)
+             else error "Cannot infer ShFun or SeFun"
+
 
 checkExpr (At loc (EBind v e rest)) expected =
     failAt loc $

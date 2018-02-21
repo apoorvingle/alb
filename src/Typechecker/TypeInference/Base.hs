@@ -282,6 +282,7 @@ assert c =
 -- predicates end up with "introduced" locations, which are of no benefit to the programmer at all.
 -- [ANI] Is this is because we never pass the location information for prediates in checkProgram?
 --       Predicates do not store any intrinsic information about their own location
+--       probably they should be defaulted to the line number of the defintion?
 
 buildLinPred :: Location -> (Located Ty -> Pred (Located Ty)) -> Binding -> M (Preds, (Id, Located (Pred (Located Ty))))
 buildLinPred loc f (LetBound tys) =

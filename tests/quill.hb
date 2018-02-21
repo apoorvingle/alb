@@ -33,9 +33,9 @@ instance ShFun ((-*>) t) fails
 instance ShFun (t -*> u) fails
 
 class SeFun t
-instance SeFun (-!>) fails
-instance SeFun ((-!>) t) fails
-instance SeFun (t -!> u) fails
+instance SeFun (-!>)
+instance SeFun ((-!>) t)
+instance SeFun (t -!> u)
 
 --------------------------------------------------------------------------------
 -- Standard types and classes
@@ -93,12 +93,11 @@ class Bounded t where
 -- const a b = a
 
 class Functor f m | m -> f where
-      fmap :: {- what should be the predicates here? -} (a -> b) ->{f1} m a ->{g1} m b
-
+      fmap :: (a ->{g} b) ->{f1} m a ->{g1} m b
 
 class Applicative f m | m -> f where
-      pure :: {- what should be the predicates here? -} t -> m t
-      (<$>) :: {- what should be the predicates here? -} m (a -> b) ->{f1} m a ->{g1} m b
+      pure :: (t >:= (m t)) => t ->{f} m t
+      (<$>) :: (Un (m (a -!> b))) =>  m (a ->{f} b) ->{f1} m a ->{g1} m b
 
 
 class Monad f m | m -> f where
@@ -111,54 +110,67 @@ class Monad f m | m -> f where
 data Maybe a = Nothing | Just a
      -- deriving Show ??
 
--- instance Monad (-!>) Maybe where
---          -- return :: a -> Maybe a
---          return a = Just a
---          -- we cannot have a linear funtion f here as it is not used exactly once.
---          -- (>>=) :: m a -> (a -> m b) -> m b
---          (>>=) Nothing f = Nothing
---          (>>=) (Just a) f = f a
+instance Functor (-!>) Maybe where
+      -- fmap :: (a ->{g} b) ->{f1} m a ->{g1} m b
+      fmap f Nothing = Nothing
+      fmap f (Just a) = Just (f a)
+
+instance Applicative (-!>) Maybe where
+      -- pure :: t -> Maybe t
+      pure a = Just a
+      -- (<$>) ::  m (a -> b) ->{f1} m a ->{g} m b
+      (<$>) f Nothing = Nothing
+      (<$>) (Just f) (Just a) = Just (f a)
+
+instance Monad (-!>) Maybe where
+         -- return :: a -> Maybe a
+         return a = Just a
+         -- we cannot have a linear funtion f here as it is not used exactly once.
+         -- (>>=) :: m a -> (a -> m b) -> m b
+         (>>=) Nothing f = Nothing
+         (>>=) (Just a) f = f a
+
 
 -- id :: a -> a
 -- id = \x -> x
 
 -- Some simple examples using \*x and \&x
 
--- This should not be typechecked as x should be used exactly once
--- f' :: a ->{f} Pair a a
--- f' = \*x -> P x x
+-- f' :: (Un a) => a ->{f} Pair a a
+-- f' = \x -> P x x
 
 -- This should not be type checked. As y should be used exactly once?
 -- f'' = \*x -> \*y -> \*z -> P x z
 
 -- g :: (Un a, ShFun f) => a ->{f} Pair a a
--- g = \&y -> P y y
+-- g = \y -> P y y
 
 
 -- how do we use f', g?
--- g' = id True
+-- g' = f' True
 
 -- lStrfix :: ((t -*> u) -!> (t -*> u)) -> (t -*> u)
-lStrfix = \*f -> let x = f x in x
+-- lStrfix = \*f -> let x = f x in x
 
 -- lAmpfix = \&f -> let x = f x in x
 
 
--- Kind inference output for l
-
 -- l :: {g :: * -> * -> *, f :: * -> * -> *, h :: * -> * -> *, a :: *, b :: *}
 --     {(->) g, SeFun f, (h a b) >:= (f a b), (->) h, SeFun h}
 --     g (h a b) (f a b)
-
-l = \f -> \*x -> f x
+l1 = \f -> \*x -> f x
+l2 = \x -> \f -> f x
 
 -- l' :: (ShFun f1, ShFun f2, ShFun h, (f a b) >:= (h a b))
 --    => (a ->{f1} a ->{f2} b) ->{g} a ->{h} b
-l' = \f -> \x -> f x x
+l1' = \f -> \x -> f x x
+l2' = \x -> \f -> f x x
 
--- This should fail
-l'' = (\f -> \x -> \y -> f x y)
+l1'' = \f -> \x -> \y -> f x y
 
-ex  = \f -> \g -> \x -> (f x) (g x)
+l2'' = \x -> \y -> \f -> f x y
 
--- ex' = \f -> \g -> \x -> \y -> (f x y) (g x)
+-- This fails
+-- ex  = \f -> \g -> \&x -> f x (g x)
+ex'  = \f -> \g -> \x -> f (g x)
+
