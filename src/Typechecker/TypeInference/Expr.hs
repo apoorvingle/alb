@@ -39,13 +39,22 @@ checkExpr (At loc (ELet ds body)) expected =
 
 checkExpr (At loc (ELam var body)) expected =
     failAt loc $
-    trace (show ("At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
+    trace (show ("DEBUG -> At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
     do argTy@(TyVar arg) <- newTyVar KStar
        resTy             <- newTyVar KStar
        (funp, t)         <- argTy `polyTo` resTy
+       trace ("DEBUG \n\tvar: " ++ (show var)
+              ++ "\n\tt: " ++ (show t)
+             )(return ())
        unifies expected t
-       r <- bind loc var (LamBound argTy) (checkExpr body resTy)
+       -- is it possible to identify that the body is Lam& here?
+       -- so that we can add the identifiers in a sharing space in our typing environment?
+       let bRes = checkExpr body resTy
+       r <- bind loc var (LamBound argTy) (bRes)
        (gteAssumps, gteGoals) <- unzip `fmap` mapM (buildLinPred loc (flip lesserRestricted (At loc t)) <=< bindingOf) (used r)
+       tyenv <- gets typeEnvironment
+       trace("\n\t->tyenv: " ++ show tyenv
+             ++ "\n\t(var: Type) " ++ (show var) ++ (show $ Map.lookup var tyenv))(return ())
        traceIf (not (null gteGoals))
                (show ("In function" <+> ppr (ELam var body) <+> "used" <+> pprList' (used r) <$>
                       "giving entailment" <+> pprList' (map snd (concat gteAssumps)) <+> "=>" <+> pprList' (map snd gteGoals)))
@@ -56,15 +65,18 @@ checkExpr (At loc (ELam var body)) expected =
 -- This is where the actual logic for typechecking \*x resides
 checkExpr (At loc (ELamStr var body)) expected =
     failAt loc $
-    trace (show ("At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
+    trace (show ("DEBUG ***** -> At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
     do argTy@(TyVar arg) <- newTyVar KStar
        resTy             <- newTyVar KStar
        (funp, t)         <- argTy `starTo` resTy
        -- trace ("DEBUG Lam*:\t" ++ show argTy ++ "\n\t" ++show resTy) (return ())
        unifies expected t
-       r <- bind loc var (LamBound argTy) (checkExpr body resTy)
+       let fbody = checkExpr body resTy
+       r <- bind loc var (LamBound argTy) fbody
        -- trace("DEBUG r: " ++show r)(return ())
        (gteAssumps, gteGoals) <- unzip `fmap` mapM (buildLinPred loc (flip lesserRestricted (At loc t)) <=< bindingOf) (used r)
+       tyenv <- gets typeEnvironment
+       trace ("Debug ****** tyenv: " ++ show tyenv) (return())
        traceIf (not (null gteGoals))
                (show ("In function" <+> ppr (ELamStr var body) <+> "used" <+> pprList' (used r) <$>
                       "giving entailment" <+> pprList' (map snd (concat gteAssumps)) <+> "=>" <+> pprList' (map snd gteGoals)))
@@ -75,21 +87,44 @@ checkExpr (At loc (ELamStr var body)) expected =
 -- This is where the actual logic for typechecking \&x resides
 checkExpr (At loc (ELamAmp var body)) expected =
     failAt loc $
-    trace (show ("At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
+    trace (show ("DEBUG &&&&& -> At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
     do argTy@(TyVar arg) <- newTyVar KStar
        resTy             <- newTyVar KStar
        (funp, t)         <- argTy `ampTo` resTy
+       tyenv <- gets typeEnvironment
+       trace ("DEBUG \n\tvar: " ++ (show var)
+              -- ++ "\n\t" ++ (show body)
+             )(return ())
+       trace ("DEBUG &&&& tyEnv: " ++ show (tyenv))(return ())
+       -- how can i get the previously added identifier here?
        unifies expected t
        r <- bind loc var (LamBound argTy) (checkExpr body resTy)
-       trace ("DEBUG used r: " ++ show (goals r)) (return ())
+       trace ("DEBUG &&&& goals r: " ++ show (goals r)) (return ())
        (gteAssumps, gteGoals) <- unzip `fmap` mapM (buildLinPred loc (flip lesserRestricted (At loc t)) <=< bindingOf) (used r)
+       trace("\n\t&&&->tyenv: " ++ show tyenv
+             ++ "\n\t(var: Type) " ++ (show var) ++ (show $ Map.lookup var tyenv)
+             ++ "\n\tused r: " ++ show (used r)
+             ++ "\n\tgoals r: " ++ show (goals r))(return ())
+       -- used r's bindings shared scope should get appended with current variable
+       let usedtyenv = Map.restrictKeys (tyenv) (Set.fromList $ used r)
+       let tyenv' = Map.union (updateVals usedtyenv var) tyenv
+       modify (\s -> s{typeEnvironment=tyenv'})
+       currTyenv <- gets typeEnvironment
+       trace ("\n\tusedtyenv: " ++ show currTyenv) (return ())
        -- trace (show ("DEBUG: gteAssumption" <$> pprList' (gteAssumps))) (return ())
+       -- do the same typechecking again, but with a new type environment with shared variables attached and return that
+       r' <- bind loc var (LamBound argTy) (checkExpr body resTy)
+       (gteAssumps, gteGoals) <- unzip `fmap` mapM (buildLinPred loc (flip lesserRestricted (At loc t)) <=< bindingOf) (used r')
+       trace("DEBUG &&&& END")(return ())
        traceIf (not (null gteGoals))
-               (show ("In function" <+> ppr (ELamAmp var body) <+> "used" <+> pprList' (used r) <$>
+               (show ("In function" <+> ppr (ELamAmp var body) <+> "used" <+> pprList' (used r') <$>
                       "giving entailment" <+> pprList' (map snd (concat gteAssumps)) <+> "=>" <+> pprList' (map snd gteGoals)))
-               (return r{ payload = X.ELamAmp var (X.TyVar arg) (payload r)
-                        , assumed = concat gteAssumps ++ assumed r
-                        , goals = funp : gteGoals ++ goals r })
+               (return r'{ payload = X.ELamAmp var (X.TyVar arg) (payload r')
+                        , assumed = concat gteAssumps ++ assumed r'
+                        , goals = funp : gteGoals ++ goals r' })
+         where
+           updateVals :: TyEnv -> Id -> TyEnv
+           updateVals tyenv i = Map.map (\v@(b, is) -> (b, i:is)) tyenv
 
 checkExpr (At loc (EVar name)) expected =
     failAt loc $
@@ -193,12 +228,12 @@ checkExpr (At loc (EMatch m)) expected =
 -- At this point we don't have any information about 'f' or 'a'
 -- The magic that we expect to happen is:
 --     1) Identify that the type of a is linear from the 'outer' context
---     2) assign this Application a tag of linearity or sharing
+--     2) assign this Application a tag of linearity or sharing (use ampTo or polyTo)
+--     3) If they have sharing resources then add them in the sharing list of tyenv
 -- eg:
--- \g -> .. -> \f -> ... -> \*x -> ... -> f x -> ...
+-- \g -> .. -> \f -> ... -> \*x -> ... -> f x
 -- becuase x is bound to a linear lambda, we should identify the application f x as linear or ShFun
-
-checkExpr (At loc (EApp f a)) expected = -- [ANI] TODO: Have more logic for -&> -*> applications
+checkExpr (At loc (EApp f a)) expected =
     failAt loc $
     trace (show ("DEBUG: At" <+> ppr loc <+> "expect type" <+> ppr expected)) $
     do t <- newTyVar KStar
@@ -210,13 +245,15 @@ checkExpr (At loc (EApp f a)) expected = -- [ANI] TODO: Have more logic for -&> 
        rF <- checkExpr f fty
        rA <- checkExpr a t
        -- (assumedC, goalsC, used') <- contract loc (used rF) (used rA)
-       trace ("DEBUG rF: \n\tused: " ++ show (used rF)
+       trace ("DEBUG APP rF: \n\tused: " ++ show (used rF)
                ++ "\n\tassumed: " ++ show (assumed rF)
                ++ "\n\tgoals: " ++ show (goals rF)) (return ())
-       trace ("DEBUG rA: \n\tused: " ++ show (used rA)
+       trace ("DEBUG APP rA: \n\tused: " ++ show (used rA)
                ++ "\n\tassumed: " ++ show (assumed rA)
                ++ "\n\tgoals: " ++ show (goals rA)) (return ())
-       trace ("DEBUG tyEnv: " ++ show (intersect (used rF ++ used rA) identifiers))(return ())
+       trace ("DEBUG APP tyEnv: " ++ show (tyenv))(return ())
+       -- compute closures here using the sharing list from the environment
+       -- trace("\n\t(a: Type) " ++ (show f))(return ())
        if (Set.isSubsetOf (Set.fromList $ used rA) (Set.fromList $ used rF)) -- Share exactly same resources then it is an ShFun
        then do (funpAmp, ftyAmp)  <-  t `ampTo` expected
                rFAmp <- checkExpr f ftyAmp
@@ -237,7 +274,6 @@ checkExpr (At loc (EApp f a)) expected = -- [ANI] TODO: Have more logic for -&> 
                             , used = used' }
                   -- what about \f -> \g -> \x -> (f x) (g x)
              else error "Cannot infer ShFun or SeFun"
-
 
 checkExpr (At loc (EBind v e rest)) expected =
     failAt loc $

@@ -172,5 +172,10 @@ l2'' = \x -> \y -> \f -> f x y
 
 -- This fails
 -- ex  = \f -> \g -> \&x -> f x (g x)
-ex'  = \f -> \g -> \x -> f (g x)
+-- sCom  = \f -> \g -> \x -> f x (g x)
 
+-- This means that a & b share resources
+sPair = \a -> \&b -> \shp -> shp a b
+
+-- This means a * b do not share resources
+lPair = \c -> \*d -> \sep -> sep c d

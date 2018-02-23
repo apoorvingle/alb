@@ -1,0 +1,13 @@
+Data transformation
+
+Text File => Surface.Syntax => IMPEG => XMPEG
+              (by Parser)
+
+
+Function Calls for type checking
+Check program -> checkDecls (TyEnv)
+              -> checktypingGroup (Explicit, implicit, pattern prim value)
+              -> checkFunctions
+              -> checkFunction
+              -> checkExpr
+
