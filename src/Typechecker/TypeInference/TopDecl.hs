@@ -341,7 +341,7 @@ assertClass (Class name params constraints methods defaults) =
        (sigs, impls) <- unzip `fmap` sequence (zipWith selectorSigImpl methods [0..])
        (mappings, defImpls) <- unzip `fmap` mapM (defaultImpl sigs) defaults
        modify (updateClassEnv methods (Map.fromList mappings)) -- add fundeps and defaults to environment
-       return (Map.map (\x -> (x, []::[Id]))(Map.fromList [ (name, LetBound tys) | (name, tys) <- sigs ]), impls, defImpls)
+       return (Map.map (\x -> (x, []::[Id], Global))(Map.fromList [ (name, LetBound tys) | (name, tys) <- sigs ]), impls, defImpls)
 
     where classPred = Pred name (map (fmap TyVar) params) Holds
           params'   = map dislocate params
@@ -531,7 +531,7 @@ checkProgram fn p =
        (evDecls, methodImpls) <- assertInstances (map instanceName derived) instanceDecls'
        areaTypes' <- mapM (\(n, tys) -> do ty <- simplifyAreaType tys
                                            return (n, (LamBound ty))) areaTypes
-       let globals = Map.unions (Map.map (\x -> (x, []::[Id])) (Map.fromList areaTypes') : methodTypeEnvironments)
+       let globals = Map.unions (Map.map (\x -> (x, []::[Id], Global)) (Map.fromList areaTypes') : methodTypeEnvironments)
        declare globals $
             do (typeDecls', ctorEnvironments) <- unzip `fmap` mapM (mapLocated checkTopDecl) typeDecls
                let ctorEnvironment = Map.unions (primCtors ++ ctorEnvironments)

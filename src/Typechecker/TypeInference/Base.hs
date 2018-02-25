@@ -90,11 +90,13 @@ instance HasTypeVariables (Binding, [Id]) KId
 -- a. will look like [(a -> (x,[])), (b -> (y, []))]
 -- b. will look like [(a -> (x, [])), (b -> (y, [b, c]), (c -> (z, [b, c]))]
 
-type TyEnv       = Map Id (Binding, [Id])
+data Scope = Global | Local
+  deriving (Show, Eq, Ord)
+type TyEnv       = Map Id (Binding, [Id], Scope)
 type CtorEnv     = Map Id ((KScheme TyS, Int), [Id])
 
 tyEnvFromCtorEnv :: CtorEnv -> TyEnv
-tyEnvFromCtorEnv = Map.map (\(x, z) -> ((LetBound $ fst x), z))
+tyEnvFromCtorEnv = Map.map (\(ksch, is) -> ((LetBound $ fst ksch), is, Global))
 
 instance HasTypeVariables TyEnv KId
     where tvs _  = []
@@ -106,13 +108,13 @@ instance HasTypeVariables TyEnv KId
 applyToEnvironment :: Unifier -> TyEnv -> TyEnv
 applyToEnvironment u@(ks, s) m = if isEmpty s && K.isEmpty ks then m else Map.map f m
   where
-    f :: (Binding, [Id]) -> (Binding, [Id])
-    f t = {-# SCC "u##" #-} u ## t
+    f :: (Binding, [Id], Scope) -> (Binding, [Id], Scope)
+    f (bnds, shids, sc) = {-# SCC "u##" #-} (u ## bnds, shids, sc)
 
 showTypeEnvironment :: TyEnv -> String
 showTypeEnvironment valenv = unlines [fromId v ++ " :: " ++ showBinding b | (v, b) <- Map.assocs valenv]
-    where showBinding (LetBound tys, ids) = show (ppr tys)
-          showBinding (LamBound ty, ids)  = show (ppr ty)
+    where showBinding (LetBound tys, ids, scope) = show (ppr tys) ++ (show scope)
+          showBinding (LamBound ty, ids, scope)  = show (ppr ty) ++ (show scope)
 
 data ClassEnv      = ClassEnv { solverEnvironment      :: Solver.SolverEnv
                               , functionalDependencies :: Map Id [Fundep Int]
@@ -354,7 +356,7 @@ bindingOf id = do s <- gets currentSubstitution
                   mt <- gets (Map.lookup id . typeEnvironment)
                   case mt of
                     Nothing -> failWithS ("Unbound identifier: " ++ fromId id)
-                    Just t  -> return (s ## fst t)
+                    Just (b, shids, sc)  -> return (s ## b)
 
 -- We encapsulate the checks for weakening in the general binding operations.  That is, when binding
 -- a set of 'x's, if the 'x's are not used in the contained operation, then the corresponding types
@@ -376,7 +378,7 @@ binds loc bs c = do modify (\st -> st { typeEnvironment = Map.union (typeEnviron
     where vs = Map.keys bs
 
 bind :: Location -> Id -> Binding -> TcRes t -> TcRes t
-bind loc x t = binds loc (Map.singleton x (t, []))
+bind loc x t = binds loc (Map.singleton x (t, [], Local))
 
 declare :: TyEnv -> M t -> M t
 declare bs c =
@@ -524,7 +526,7 @@ freeEnvironmentVariables :: M [KId]
 freeEnvironmentVariables =
     do s  <- gets currentSubstitution
        ts <- gets (Map.elems . typeEnvironment)
-       return (nub (tvs (s ## ts)))
+       return (nub (tvs (s ## ((\(bs,_ ,_) -> bs) `fmap` ts))))
 
 -- splitPredicates: predicates -> (retained, deferred)
 splitPredicates :: Preds -> M (Preds, Preds)
