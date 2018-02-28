@@ -26,8 +26,18 @@ import Typechecker.TypeInference.Base
 
 -- we need to get all the local bindings for sharing
 local :: TyEnv -> TyEnv
-local = Map.filter (\(bnds, scids, scope) -> scope == Local)
+local = Map.filter (\(_, _, scope) -> scope == Local)
 
+closureOverlaps :: TyEnv -> Set Id -> Set Id -> Bool
+closureOverlaps tyenv s1 s2 =
+  (Set.unions $ fmap (fnd e) (Set.toList s1))
+  == (Set.unions $ fmap (fnd e) (Set.toList s1))
+  where
+    -- find all the ids that are shared with i
+    fnd :: [[Id]] -> Id -> Set Id
+    fnd lls i = Set.fromList $ concat (filter (elem i) lls)
+    e :: [[Id]]
+    e = concat $ Map.elems (Map.map (\(_,shids, _) -> shids) tyenv)
 
 checkExpr :: Located Exp -> Ty -> TcRes X.Expr
 
@@ -63,6 +73,9 @@ checkExpr (At loc (ELam var body)) expected =
                (return r{ payload = X.ELam var (X.TyVar arg) (payload r)
                         , assumed = concat gteAssumps ++ assumed r
                         , goals = funp : gteGoals ++ goals r })
+         where
+           updateVals :: TyEnv -> Id -> TyEnv
+           updateVals tyenv i = Map.map (\v@(b, is, sc) -> (b, (is ++ [[i]]), sc)) tyenv
 
 -- This is where the actual logic for typechecking \*x resides
 checkExpr (At loc (ELamStr var body)) expected =
@@ -75,16 +88,27 @@ checkExpr (At loc (ELamStr var body)) expected =
        unifies expected t
        let fbody = checkExpr body resTy
        r <- bind loc var (LamBound argTy) fbody
+       tyenv <- gets typeEnvironment
+       trace ("DEBUG \n\tvar: " ++ (show var)
+             )(return ())
+       trace ("DEBUG **** tyEnv: " ++ show (local tyenv))(return ())
+       let usedtyenv = Map.restrictKeys (tyenv) (Set.fromList (Map.keys $ local tyenv))
+           tyenv' = Map.union (updateVals usedtyenv var) tyenv
+       modify (\s -> s{typeEnvironment=tyenv'})
+       currTyenv <- gets typeEnvironment
+       trace ("\n\tusedtyenv with sep: " ++ show currTyenv) (return ())
        -- trace("DEBUG r: " ++show r)(return ())
        (gteAssumps, gteGoals) <- unzip `fmap` mapM (buildLinPred loc (flip lesserRestricted (At loc t)) <=< bindingOf) (used r)
-       tyenv <- gets typeEnvironment
-       trace ("Debug ****** tyenv: " ++ show tyenv) (return())
        traceIf (not (null gteGoals))
                (show ("In function" <+> ppr (ELamStr var body) <+> "used" <+> pprList' (used r) <$>
                       "giving entailment" <+> pprList' (map snd (concat gteAssumps)) <+> "=>" <+> pprList' (map snd gteGoals)))
                (return r{ payload = X.ELamStr var (X.TyVar arg) (payload r)
                         , assumed = concat gteAssumps ++ assumed r
                         , goals = funp : gteGoals ++ goals r })
+         where
+           updateVals :: TyEnv -> Id -> TyEnv
+           updateVals tyenv i = Map.map (\v@(b, is, sc) -> (b, (is ++ [[i]]), sc)) tyenv
+
 
 -- This is where the actual logic for typechecking \&x resides
 checkExpr (At loc (ELamAmp var body)) expected =
@@ -124,7 +148,7 @@ checkExpr (At loc (ELamAmp var body)) expected =
                         , goals = funp : gteGoals ++ goals r' })
          where
            updateVals :: TyEnv -> Id -> TyEnv
-           updateVals tyenv i = Map.map (\v@(b, is, sc) -> (b, i:is, sc)) tyenv
+           updateVals tyenv i = Map.map (\v@(b, is, sc) -> (b, (init is) ++ [(i : (last is))], sc)) tyenv
 
 checkExpr (At loc (EVar name)) expected =
     failAt loc $
@@ -244,17 +268,17 @@ checkExpr (At loc (EApp f a)) expected =
        (funp, fty) <- t `polyTo` expected
        rF <- checkExpr f fty
        rA <- checkExpr a t
-       -- (assumedC, goalsC, used') <- contract loc (used rF) (used rA)
+       -- -- (assumedC, goalsC, used') <- contract loc (used rF) (used rA)
        trace ("DEBUG APP rF: \n\tused: " ++ show (used rF)
                ++ "\n\tassumed: " ++ show (assumed rF)
-               ++ "\n\tgoals: " ++ show (goals rF)) (return ())
-       trace ("DEBUG APP rA: \n\tused: " ++ show (used rA)
+               ++ "\n\tgoals: " ++ show (goals rF)
+              ++ "\nDEBUG APP rA: \n\tused: " ++ show (used rA)
                ++ "\n\tassumed: " ++ show (assumed rA)
                ++ "\n\tgoals: " ++ show (goals rA)) (return ())
-       trace ("DEBUG APP tyEnv: " ++ show (tyenv))(return ())
+       -- trace ("DEBUG APP tyEnv: " ++ show (tyenv))(return ())
        -- compute closures here using the sharing list from the environment
        -- trace("\n\t(a: Type) " ++ (show f))(return ())
-       if (Set.isSubsetOf (Set.fromList $ used rA) (Set.fromList $ used rF)) -- Share exactly same resources then it is an ShFun
+       if (closureOverlaps tyenv (Set.fromList $ used rA) (Set.fromList $ used rF)) -- Share exactly same resources then it is an ShFun
        then do (funpAmp, ftyAmp)  <-  t `ampTo` expected
                rFAmp <- checkExpr f ftyAmp
                rAAmp <- checkExpr a t
@@ -403,8 +427,8 @@ checkMatch (MGuarded (GFrom (At l p) e) m) expected =
                 (kvars, tyvars, ps :=> At _ t) <- instantiate tys
                 let (parameters, result) = flattenArrows t
                     arity                = length parameters
-                    valEnv :: Map Id (Binding, [Id], Scope)
-                    valEnv               = Map.fromList $ zip vs (zip3 (map (LamBound . dislocate) parameters) (repeat ([]::[Id])) (repeat Global))
+                    valEnv :: Map Id (Binding, [[Id]], Scope)
+                    valEnv               = Map.fromList $ zip vs (zip3 (map (LamBound . dislocate) parameters) (repeat ([[]]::[[Id]])) (repeat Global))
                 when (length vs /= arity) $
                   failWithS (fromId ctor ++ " requires " ++ multiple arity "argument" "arguments")
 
@@ -586,7 +610,7 @@ checkTypingGroup (Explicit (name, params, body) expectedTyS) =
                                                 (X.Gen declaredTyVars
                                                   evvars
                                                   (X.ESubst [] evsubst body'))],
-                                   Map.singleton name ((LetBound expectedTyS), []::[Id], Local))
+                                   Map.singleton name ((LetBound expectedTyS), [[]]::[[Id]], Local))
                       , assumed = deferredAssumptions
                       , goals = deferredGoals
                       , used = used }
@@ -612,7 +636,7 @@ checkTypingGroup (Implicit fs) =
     do -- Generate new type variables for functions
        ts <- replicateM (length fs) (newTyVar KStar)
        -- Check function bodies in environment with aforementioned type variables
-       let env = Map.fromList (zip ids (zip3 (map LamBound ts) (repeat ([]::[Id])) (repeat Local)))
+       let env = Map.fromList (zip ids (zip3 (map LamBound ts) (repeat ([[]]::[[Id]])) (repeat Local)))
        eqnRs <- sequence [declare env (contractRecursive introducedLocation name (checkFunction ps body t)) | ((name, ps, body), t) <- zip fs ts]
 
        (assumedC, goalsC, used) <- contractMany introducedLocation (map used eqnRs)
@@ -695,7 +719,7 @@ checkTypingGroup (Implicit fs) =
        trace (show (hang 4 ("Inferred types" <$>
                             vcat [ppr id <::> ppr tys <+> "(generalized from" <+> ppr t <> ")" | (id, (_, tys), t) <- zip3 ids tyss ts']) <$>
                     "With free environment variables" <+> cat (punctuate (comma <> space) (map ppr envvars))))
-             (return R{ payload = (functions, Map.map (\x -> (x, []::[Id], Global)) (Map.fromList (zip ids (map (LetBound . snd) tyss))))
+             (return R{ payload = (functions, Map.map (\x -> (x, [[]]::[[Id]], Global)) (Map.fromList (zip ids (map (LetBound . snd) tyss))))
                       , assumed = deferredAssumptions
                       , goals = deferred
                       , used = used })
@@ -792,7 +816,7 @@ checkTypingGroup (Pattern (At l p) m signatures) =
 
        trace (show ("Generalizing from pattern binding:" <$$>
                     vcat ["   " <> ppr v <::> ppr tys | (v, (_, tys)) <- zip vs componentSchemes])) $
-            return R{ payload = (tupleGroup ++ componentGroups, (Map.map (\x -> (x, []::[Id], Local)) componentEnv))
+            return R{ payload = (tupleGroup ++ componentGroups, (Map.map (\x -> (x, [[]]::[[Id]], Local)) componentEnv))
                     , assumed = assumed rBody
                     , goals = goals rBody
                     , used = used rBody }
@@ -843,7 +867,7 @@ checkTypingGroup (Pattern (At l p) m signatures) =
 
 checkTypingGroup (PrimValue (Signature name expectedTyS) str) =
     return R{ payload = ([X.PrimDefn name (convert expectedTyS) (str, [])],
-                         Map.singleton name (LetBound expectedTyS, [], Global))
+                         Map.singleton name (LetBound expectedTyS, ([[]]::[[Id]]), Global))
             , assumed = []
             , goals = []
             , used = [] }
@@ -852,7 +876,7 @@ checkTypingGroup (PrimValue (Signature name expectedTyS) str) =
 
 checkDecls :: Decls Pred KId -> TcRes (X.Decls, TyEnv)
 checkDecls (Decls groups) =
-    do rg <- declare (Map.map (\x -> (x, []::[Id], Global)) (Map.fromList (signatures groups))) (checkGroups groups)
+    do rg <- declare (Map.map (\x -> (x, [[]]::[[Id]], Global)) (Map.fromList (signatures groups))) (checkGroups groups)
        let (groups', vals) = payload rg
        return rg{ payload = (X.Decls (concat groups'), vals) }
     where checkGroups [] = return R{ payload = ([], Map.empty)

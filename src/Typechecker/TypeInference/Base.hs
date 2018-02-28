@@ -92,8 +92,8 @@ instance HasTypeVariables (Binding, [Id]) KId
 
 data Scope = Global | Local
   deriving (Show, Eq, Ord)
-type TyEnv       = Map Id (Binding, [Id], Scope)
-type CtorEnv     = Map Id ((KScheme TyS, Int), [Id])
+type TyEnv       = Map Id (Binding, [[Id]], Scope)
+type CtorEnv     = Map Id ((KScheme TyS, Int), [[Id]])
 
 tyEnvFromCtorEnv :: CtorEnv -> TyEnv
 tyEnvFromCtorEnv = Map.map (\(ksch, is) -> ((LetBound $ fst ksch), is, Global))
@@ -108,7 +108,7 @@ instance HasTypeVariables TyEnv KId
 applyToEnvironment :: Unifier -> TyEnv -> TyEnv
 applyToEnvironment u@(ks, s) m = if isEmpty s && K.isEmpty ks then m else Map.map f m
   where
-    f :: (Binding, [Id], Scope) -> (Binding, [Id], Scope)
+    f :: (Binding, [[Id]], Scope) -> (Binding, [[Id]], Scope)
     f (bnds, shids, sc) = {-# SCC "u##" #-} (u ## bnds, shids, sc)
 
 showTypeEnvironment :: TyEnv -> String
@@ -378,7 +378,7 @@ binds loc bs c = do modify (\st -> st { typeEnvironment = Map.union (typeEnviron
     where vs = Map.keys bs
 
 bind :: Location -> Id -> Binding -> TcRes t -> TcRes t
-bind loc x t = binds loc (Map.singleton x (t, [], Local))
+bind loc x t = binds loc (Map.singleton x (t, [[x]], Local))
 
 declare :: TyEnv -> M t -> M t
 declare bs c =
@@ -393,7 +393,7 @@ declare bs c =
 bindCtors :: MonadState TcState m => CtorEnv -> m ()
 bindCtors ctors = modify (\s -> s { ctorEnvironment = Map.union (ctorEnvironment s) ctors })
 
-ctorBinding :: (MonadState TcState m, MonadBase m) => Id -> m ((KScheme TyS, Int), [Id])
+ctorBinding :: (MonadState TcState m, MonadBase m) => Id -> m ((KScheme TyS, Int), [[Id]])
 ctorBinding id = do mt <- gets (Map.lookup id . ctorEnvironment)
                     case mt of
                       Nothing -> failWithS ("Unbound constructor function name " ++ fromId id)

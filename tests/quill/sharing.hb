@@ -44,3 +44,5 @@ sPair = \a -> \&b -> \shp -> shp a b
 
 -- This means a * b do not share resources
 lPair = \c -> \*d -> \sep -> sep c d
+
+sCom  = \f -> \g -> \x -> f x (g x)
