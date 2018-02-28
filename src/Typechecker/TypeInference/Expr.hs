@@ -28,14 +28,16 @@ import Typechecker.TypeInference.Base
 local :: TyEnv -> TyEnv
 local = Map.filter (\(_, _, scope) -> scope == Local)
 
-closureOverlaps :: TyEnv -> Set Id -> Set Id -> Bool
+-- find all the ids that are shared with i
+closure :: [[Id]] -> Id -> Set Id
+closure lls i = Set.fromList $ concat (filter (elem i) lls)
+
+-- returns true if both the set of Ids share the same identifiers
+closureOverlaps :: TyEnv -> [Id] -> [Id] -> Bool
 closureOverlaps tyenv s1 s2 =
-  (Set.unions $ fmap (fnd e) (Set.toList s1))
-  == (Set.unions $ fmap (fnd e) (Set.toList s1))
+  (Set.unions $ fmap (closure e) s1)
+  == (Set.unions $ fmap (closure e) s2)
   where
-    -- find all the ids that are shared with i
-    fnd :: [[Id]] -> Id -> Set Id
-    fnd lls i = Set.fromList $ concat (filter (elem i) lls)
     e :: [[Id]]
     e = concat $ Map.elems (Map.map (\(_,shids, _) -> shids) tyenv)
 
@@ -274,30 +276,40 @@ checkExpr (At loc (EApp f a)) expected =
                ++ "\n\tgoals: " ++ show (goals rF)
               ++ "\nDEBUG APP rA: \n\tused: " ++ show (used rA)
                ++ "\n\tassumed: " ++ show (assumed rA)
-               ++ "\n\tgoals: " ++ show (goals rA)) (return ())
-       -- trace ("DEBUG APP tyEnv: " ++ show (tyenv))(return ())
+               ++ "\n\tgoals: " ++ show (goals rA)
+             ++ "\n\toverlap? " ++ show (closureOverlaps tyenv (used rA) (used rF))) (return ())
+       let  e = concat $ Map.elems (Map.map (\(_,shids, _) -> shids) (local tyenv))
+       trace ("\n\t e: " ++ show e
+             ++ "\n\tused rA closure: " ++ show (Set.unions $ fmap (closure e) (used rA))
+             ++"\n\tused rF closure: " ++ show (Set.unions $ fmap (closure e) (used rF))
+             ++ "\n\tEq? " ++ (show $ (Set.unions $ fmap (closure e) (used rA)) == (Set.unions $ fmap (closure e) (used rF)))) (return ())
        -- compute closures here using the sharing list from the environment
-       -- trace("\n\t(a: Type) " ++ (show f))(return ())
-       if (closureOverlaps tyenv (Set.fromList $ used rA) (Set.fromList $ used rF)) -- Share exactly same resources then it is an ShFun
+       if (closureOverlaps tyenv (used rA) (used rF)) -- Share exactly same resources then it is an ShFun
        then do (funpAmp, ftyAmp)  <-  t `ampTo` expected
                rFAmp <- checkExpr f ftyAmp
                rAAmp <- checkExpr a t
                (assumedC, goalsC, used') <- contract loc (used rFAmp) (used rAAmp)
+               let  e = concat $ Map.elems (Map.map (\(_,shids, _) -> shids) (local tyenv))
+               trace ("\n\t e: " ++ show e
+                     ++ "\n\tused rA closure: " ++ show (Set.unions $ fmap (closure e) (used rA))
+                     ++"\n\tused rF closure: " ++ show (Set.unions $ fmap (closure e) (used rF))
+                     ++ "\n\tEq? " ++ (show $ (Set.unions $ fmap (closure e) (used rA)) == (Set.unions $ fmap (closure e) (used rF)))) (return ())
                return R{ payload = X.EApp (payload rFAmp) (payload rAAmp)
                        , assumed = assumedC ++ assumed rFAmp ++ assumed rAAmp
                        , goals = funpAmp : goalsC ++ goals rFAmp ++ goals rAAmp
                        , used = used' }
-       else if (Set.disjoint (Set.fromList $ used rF) (Set.fromList $ used rA))
-            then do (funpStr, ftyStr)  <-  t `starTo` expected -- Share no resources then it is an SeFun
-                    rFStr <- checkExpr f ftyStr
-                    rAStr <- checkExpr a t
-                    (assumedC, goalsC, used') <- contract loc (used rFStr) (used rAStr)
-                    return R{ payload = X.EApp (payload rFStr) (payload rAStr)
-                            , assumed = assumedC ++ assumed rFStr ++ assumed rAStr
-                            , goals = funpStr : goalsC ++ goals rFStr ++ goals rAStr
-                            , used = used' }
+       else -- if (Set.disjoint (Set.fromList $ used rF) (Set.fromList $ used rA))
+            -- then
+            do (funpStr, ftyStr)  <-  t `starTo` expected -- Share no resources then it is an SeFun
+               rFStr <- checkExpr f ftyStr
+               rAStr <- checkExpr a t
+               (assumedC, goalsC, used') <- contract loc (used rFStr) (used rAStr)
+               return R{ payload = X.EApp (payload rFStr) (payload rAStr)
+                       , assumed = assumedC ++ assumed rFStr ++ assumed rAStr
+                       , goals = funpStr : goalsC ++ goals rFStr ++ goals rAStr
+                       , used = used' }
                   -- what about \f -> \g -> \x -> (f x) (g x)
-             else error "Cannot infer ShFun or SeFun"
+             -- else error "Cannot infer ShFun or SeFun"
 
 checkExpr (At loc (EBind v e rest)) expected =
     failAt loc $

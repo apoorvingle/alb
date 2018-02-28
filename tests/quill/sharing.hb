@@ -32,6 +32,10 @@ instance ShFun (-*>) fails
 instance ShFun ((-*>) t) fails
 instance ShFun (t -*> u) fails
 
+instance ShFun (-!>)
+instance ShFun ((-!>) t)
+instance ShFun (t -!> u)
+
 class SeFun t
 instance SeFun (-!>)
 instance SeFun ((-!>) t)
@@ -45,4 +49,10 @@ sPair = \a -> \&b -> \shp -> shp a b
 -- This means a * b do not share resources
 lPair = \c -> \*d -> \sep -> sep c d
 
-sCom  = \f -> \g -> \x -> f x (g x)
+-- sCom :: ((->) s, (->) j, (>:=) (g a (f b c)) (j (h a b) (k a c)),
+--          (->) k, (>:=) (g a (f b c)) (k a c), (>:=) (h a b) (k a c),
+--           SeFun f, Un a, SeFun g, SeFun h) => -- why are these ShFun?
+--                     ( a ->{g} ( b ->{f} c))
+--                     ->{s}
+--                     ((a ->{h} b) ->{j} (a ->{k} c))
+sCom  = \f -> \g -> \x -> (f x) (g x)
